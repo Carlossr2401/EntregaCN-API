@@ -15,7 +15,7 @@ app = Flask(__name__)
 # app.py
 
 # Apunta al puerto 5433, que es el que abrimos en el host
-DB_URI = "postgresql://postgres:mysecretpassword@localhost:5433/grades_db"
+DB_URI = "postgresql://postgres:mysecretpassword@localhost:5432/grades_db"
 app.config["SQLALCHEMY_DATABASE_URI"] = DB_URI
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # Desactiva warnings
