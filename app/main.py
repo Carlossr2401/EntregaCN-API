@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from pydantic import ValidationError
@@ -15,7 +16,7 @@ app = Flask(__name__)
 # app.py
 
 # Apunta al puerto 5433, que es el que abrimos en el host
-DB_URI = "postgresql://postgres:mysecretpassword@localhost:5432/grades_db"
+DB_URI = os.environ.get("SQLALCHEMY_DATABASE_URI", "sqlite:///test.db")
 app.config["SQLALCHEMY_DATABASE_URI"] = DB_URI
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # Desactiva warnings

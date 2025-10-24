@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Notas (API)</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <h1>📚 Sistema de Control de Notas</h1>
+
+    <form id="form-crear-nota">
+        <h2>Añadir Nueva Nota</h2>
+        <div class="form-grupo">
+            <label for="clase">Clase:</label>
+            <input type="text" id="clase" placeholder="Ej: Matemáticas" required>
+        </div>
+        <div class="form-grupo">
+            <label for="alumno">Alumno:</label>
+            <input type="text" id="alumno" placeholder="Ej: Ana López" required>
+        </div>
+        <div class="form-grupo">
+            <label for="nota">Nota:</label>
+            <input type="number" id="nota" min="0" max="10" placeholder="Ej: 8" required>
+        </div>
+        <button type="submit">Guardar Nota</button>
+    </form>
+
+    <hr>
+
+    <h2>Notas Actuales</h2>
+    <ul id="lista-notas">
+        </ul>
+
+    <script src="app.js"></script>
+</body>
+</html>

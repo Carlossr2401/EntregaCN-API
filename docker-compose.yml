@@ -1,0 +1,54 @@
+version: '3.8' # Versión de Docker Compose
+
+services:
+  # 1. Servicio del Backend (Flask API)
+  api:
+    build: ./app # Le dice que construya desde la carpeta ./app
+    restart: on-failure # Si falla, reinicia
+    environment:
+      # Pasa la URI de la BBDD a main.py
+      SQLALCHEMY_DATABASE_URI: "postgresql://postgres:mysecretpassword@db:5432/grades_db"
+      FLASK_APP: "main" # Le dice a Flask dónde está la app
+    depends_on:
+      db: # Le dice a Docker que espere a que la BBDD esté lista
+        condition: service_healthy
+    # Este 'entrypoint' es un truco para crear las tablas automáticamente
+    # ... (en el servicio api:)
+    entrypoint: >
+      sh -c "
+        echo 'Esperando a la BBDD...'
+        sleep 5
+        echo 'Creando tablas (si no existen)...'
+        python -c 'from main import app, db; app.app_context().push(); db.create_all()'
+        echo 'Iniciando Gunicorn...'
+        gunicorn --bind 0.0.0.0:5000 main:app
+      "
+
+  # 2. Servicio de la Base de Datos (Postgres)
+  db:
+    image: postgres:15-alpine # Usa la imagen oficial de Postgres
+    environment:
+      POSTGRES_DB: grades_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    volumes:
+      # Esto guarda tus datos para que no se borren al apagar el contenedor
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck: # Esto permite al 'api' saber cuándo está lista
+      test: ["CMD-SHELL", "pg_isready -U postgres -d grades_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 3. Servicio del Frontend (Nginx)
+  frontend:
+    build: ./frontend # Construye desde la carpeta ./frontend
+    ports:
+      # Mapea el puerto 8080 de TU PC al 80 del contenedor
+      - "8080:80" 
+    depends_on:
+      - api # Espera a que la API esté iniciada
+
+# Define un volumen para que los datos de la BBDD persistan
+volumes:
+  postgres_data:
