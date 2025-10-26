@@ -1,20 +1,22 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Despliegue de la aplicación (Frontend, API, BBDD) usando Docker Compose
-  en una EC2 t3.micro. La contraseña está en el repo.
+  en una EC2 t3.micro.
 
 Parameters:
   MyKeyName:
     Description: Nombre de tu Key Pair (.pem) existente para acceder por SSH
     Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Debe ser el nombre de un Key Pair existente en EC2.
+
   MyHomeIP:
     Description: Tu IP de casa (para acceso SSH). Añade /32 al final.
     Type: String
     Default: '88.24.94.142/32' 
-  RepoUrl:
-    Description: URL del repositorio de GitHub (con la contraseña en el docker-compose.yml).
-    Type: String
-    Default: https://github.com/Carlossr2401/EntregaCN-API.git
+
+  # --- SE ELIMINÓ EL PARÁMETRO 'RepoUrl' ---
+  # Ya no le pasamos la URL de Git a CloudFormation
+
   LatestAmiId:
     Description: ID de la AMI de Amazon Linux 2023.
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
@@ -70,14 +72,17 @@ Resources:
           # 4. Ejecutar como 'ec2-user'
           su - ec2-user -c "
             # 5. Clonar el repositorio
-            git clone ${RepoUrl} /home/ec2-user/app
+            # --- CAMBIO AQUÍ ---
+            # La URL está escrita directamente en el script.
+            # CloudFormation nunca la ve.
+            git clone https://github.com/Carlossr2401/EntregaCN-API.git /home/ec2-user/app
             cd /home/ec2-user/app
             
             # 6. Limpiar el docker-compose.yml
             sed -i '/^version:/d' docker-compose.yml
             sed -i 's/\"8080:80\"/\"80:80\"/' docker-compose.yml
             
-            # 7. ¡Lanzar el stack! (Sin secretos)
+            # 7. ¡Lanzar el stack!
             docker compose up --build -d
           "
 
