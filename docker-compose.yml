@@ -1,12 +1,14 @@
-version: '3.8' # Versión de Docker Compose
+version: '3.8' # Puedes borrar esta línea, ya es obsoleta
 
 services:
   # 1. Servicio del Backend (Flask API)
   api:
-    build: ./app # Le dice que construya desde la carpeta ./app
-    restart: on-failure # Si falla, reinicia
+    build: ./app 
+    restart: on-failure 
     environment:
-      SQLALCHEMY_DATABASE_URI: "postgresql://postgres:${DB_PASSWORD}@db:5432/grades_db"
+      # --- CAMBIO AQUÍ ---
+      # La contraseña está escrita directamente
+      SQLALCHEMY_DATABASE_URI: "postgresql://postgres:mysecretpassword@db:5432/grades_db"
       FLASK_APP: "main"
     depends_on:
       db:
@@ -23,15 +25,16 @@ services:
 
   # 2. Servicio de la Base de Datos (Postgres)
   db:
-    image: postgres:15-alpine # Usa la imagen oficial de Postgres
+    image: postgres:15-alpine 
     environment:
       POSTGRES_DB: grades_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # --- CAMBIO AQUÍ ---
+      # La contraseña está escrita directamente
+      POSTGRES_PASSWORD: mysecretpassword
     volumes:
-      # Esto guarda tus datos para que no se borren al apagar el contenedor
       - postgres_data:/var/lib/postgresql/data
-    healthcheck: # Esto permite al 'api' saber cuándo está lista
+    healthcheck: 
       test: ["CMD-SHELL", "pg_isready -U postgres -d grades_db"]
       interval: 5s
       timeout: 5s
@@ -39,13 +42,11 @@ services:
 
   # 3. Servicio del Frontend (Nginx)
   frontend:
-    build: ./frontend # Construye desde la carpeta ./frontend
+    build: ./frontend 
     ports:
-      # Mapea el puerto 8080 de TU PC al 80 del contenedor
       - "8080:80" 
     depends_on:
-      - api # Espera a que la API esté iniciada
+      - api 
 
-# Define un volumen para que los datos de la BBDD persistan
 volumes:
   postgres_data:
