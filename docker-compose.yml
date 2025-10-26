@@ -6,11 +6,14 @@ services:
     build: ./app # Le dice que construya desde la carpeta ./app
     restart: on-failure # Si falla, reinicia
     environment:
-      SQLALCHEMY_DATABASE_URI: "postgresql://postgres:${DB_PASSWORD}@db:5432/grades_db"
-      FLASK_APP: "main"
+      # Pasa la URI de la BBDD a main.py
+      SQLALCHEMY_DATABASE_URI: "postgresql://postgres:mysecretpassword@db:5432/grades_db"
+      FLASK_APP: "main" # Le dice a Flask dónde está la app
     depends_on:
-      db:
+      db: # Le dice a Docker que espere a que la BBDD esté lista
         condition: service_healthy
+    # Este 'entrypoint' es un truco para crear las tablas automáticamente
+    # ... (en el servicio api:)
     entrypoint: >
       sh -c "
         echo 'Esperando a la BBDD...'
@@ -27,7 +30,7 @@ services:
     environment:
       POSTGRES_DB: grades_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: mysecretpassword
     volumes:
       # Esto guarda tus datos para que no se borren al apagar el contenedor
       - postgres_data:/var/lib/postgresql/data
