@@ -75,7 +75,7 @@ Resources:
             # --- CAMBIO AQUÍ ---
             # La URL está escrita directamente en el script.
             # CloudFormation nunca la ve.
-            git clone https://github.com/Carlossr2401/EntregaCN-API.git /home/ec2-user/app
+            git clone https://github.com/Carlossr2401/entregacn-api.git /home/ec2-user/app
             cd /home/ec2-user/app
             
             # 6. Limpiar el docker-compose.yml
