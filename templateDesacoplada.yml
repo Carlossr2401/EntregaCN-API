@@ -144,7 +144,8 @@ Resources:
   AppECR:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Sub "${AWS::StackName}-app-repo"
+      RepositoryName: app-repo
+
 
   ###########################
   # 5️⃣ ECS Cluster + Fargate #
