@@ -1,6 +1,6 @@
 // --- CONFIGURACIÓN ---
 // ¡CAMBIA ESTA IP POR LA IP PÚBLICA DE TU INSTANCIA EC2!
-const API_URL = '/api/grades';
+const API_URL = 'https://sdnd206mgj.execute-api.us-east-1.amazonaws.com/prod/';
 // ---------------------
 
 // Referencias a los elementos del DOM
