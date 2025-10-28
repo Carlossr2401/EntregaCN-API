@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Despliegue de la aplicación (Frontend, API, BBDD) usando Docker Compose
-  en una EC2 t3.micro.
+  Despliegue de aplicación en EC2 con Docker Compose y exposición vía API Gateway HTTP.
 
 Parameters:
   MyKeyName:
@@ -12,13 +11,10 @@ Parameters:
   MyHomeIP:
     Description: Tu IP de casa (para acceso SSH). Añade /32 al final.
     Type: String
-    Default: '88.24.94.142/32' 
-
-  # --- SE ELIMINÓ EL PARÁMETRO 'RepoUrl' ---
-  # Ya no le pasamos la URL de Git a CloudFormation
+    Default: '88.24.94.142/32'
 
   LatestAmiId:
-    Description: ID de la AMI de Amazon Linux 2023.
+    Description: ID de la AMI de Amazon Linux 2023
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
 
@@ -48,48 +44,70 @@ Resources:
       Tags:
         - Key: Name
           Value: Docker-Compose-Server
-          
       UserData:
         Fn::Base64: |
           #!/bin/bash -xe
-          
-          # 1. Instalar dependencias 
           dnf update -y
           dnf install git wget docker -y
-          
-          # 2. Iniciar Docker
           systemctl start docker
           systemctl enable docker
           usermod -aG docker ec2-user
-          
-          # 3. Instalar plugins de Docker (Compose y Buildx)
           mkdir -p /usr/local/lib/docker/cli-plugins
           curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
           wget https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 -O /usr/local/lib/docker/cli-plugins/docker-buildx
           chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
           chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
-          
-          # 4. Ejecutar como 'ec2-user'
           su - ec2-user -c "
-            # 5. Clonar el repositorio
-            # --- CAMBIO AQUÍ ---
-            # La URL está escrita directamente en el script.
-            # CloudFormation nunca la ve.
             git clone https://github.com/Carlossr2401/entregacn-api.git /home/ec2-user/app
             cd /home/ec2-user/app
-            
-            # 6. Limpiar el docker-compose.yml
             sed -i '/^version:/d' docker-compose.yml
             sed -i 's/\"8080:80\"/\"80:80\"/' docker-compose.yml
-            
-            # 7. ¡Lanzar el stack!
             docker compose up --build -d
           "
+
+  # === API Gateway HTTP ===
+  MyHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: EC2ProxyAPI
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        AllowOrigins: ["*"]
+        AllowHeaders: ["*"]
+
+  MyApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref MyHttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationUri: !Sub "http://${MyEC2Instance.PublicDnsName}"
+      IntegrationMethod: ANY          # 👈 clave para evitar el error
+      PayloadFormatVersion: "1.0"
+
+  MyApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MyHttpApi
+      RouteKey: "ANY /{proxy+}"
+      Target: !Sub "integrations/${MyApiIntegration}"
+
+  MyApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref MyHttpApi
+      StageName: prod
+      AutoDeploy: true
 
 Outputs:
   PublicIP:
     Description: IP Pública de la instancia
     Value: !GetAtt MyEC2Instance.PublicIp
+
   PublicURL:
-    Description: URL para acceder a la aplicación
-    Value: !Sub 'http://${MyEC2Instance.PublicDnsName}'
+    Description: URL directa (sin API Gateway)
+    Value: !Sub "http://${MyEC2Instance.PublicDnsName}"
+
+  ApiGatewayInvokeURL:
+    Description: Endpoint público del API Gateway
+    Value: !Sub "https://${MyHttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"

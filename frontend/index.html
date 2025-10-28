@@ -10,6 +10,20 @@
 
     <h1>📚 Sistema de Control de Notas</h1>
 
+    <!-- --- ZONA DE CONFIGURACIÓN --- -->
+    <section id="configuracion" style="border:1px solid #ccc; padding:10px; margin-bottom:20px;">
+        <h2>⚙ Configuración de la API</h2>
+        <div class="form-grupo">
+            <label for="api-url">URL de la API Gateway:</label>
+            <input type="text" id="api-url" placeholder="https://abc123xyz.execute-api.eu-west-1.amazonaws.com/prod/" style="width:100%;">
+        </div>
+        <div class="form-grupo">
+            <label for="api-password">Contraseña / Token (opcional):</label>
+            <input type="text" id="api-password" placeholder="Introduce la contraseña si aplica" style="width:100%;">
+        </div>
+    </section>
+
+    <!-- --- FORMULARIO PARA CREAR NOTAS --- -->
     <form id="form-crear-nota">
         <h2>Añadir Nueva Nota</h2>
         <div class="form-grupo">
@@ -30,8 +44,7 @@
     <hr>
 
     <h2>Notas Actuales</h2>
-    <ul id="lista-notas">
-        </ul>
+    <ul id="lista-notas"></ul>
 
     <script src="app.js"></script>
 </body>

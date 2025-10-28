@@ -82,3 +82,37 @@ li {
 .delete-btn:hover {
     background-color: #a71d2a;
 }
+
+/* --- Zona de Configuración --- */
+#configuracion {
+    background: #fff3cd; /* un amarillo suave */
+    border-radius: 8px;
+    padding: 15px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+#configuracion h2 {
+    text-align: center;
+    color: #856404; /* marrón oscuro para destacar */
+    margin-bottom: 15px;
+}
+
+#configuracion .form-grupo {
+    margin-bottom: 12px;
+}
+
+#configuracion .form-grupo label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    display: block;
+    color: #856404;
+}
+
+#configuracion .form-grupo input {
+    width: 95%;
+    padding: 10px;
+    border: 1px solid #ffc107; /* borde amarillo */
+    border-radius: 4px;
+    background-color: #fff8e1; /* fondo suave */
+}

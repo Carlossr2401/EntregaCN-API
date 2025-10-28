@@ -1,7 +1,7 @@
-// --- CONFIGURACIÓN ---
-// ¡CAMBIA ESTA IP POR LA IP PÚBLICA DE TU INSTANCIA EC2!
-const API_URL = 'https://sdnd206mgj.execute-api.us-east-1.amazonaws.com/prod/';
-// ---------------------
+// --- CONFIGURACIÓN DINÁMICA ---
+// La URL de la API se toma desde el input del HTML
+const APIInput = document.getElementById('api-url');
+const PASSWORDInput = document.getElementById('api-password'); // Si usas contraseña
 
 // Referencias a los elementos del DOM
 const form = document.getElementById('form-crear-nota');
@@ -11,6 +11,12 @@ const listaNotas = document.getElementById('lista-notas');
  * 1. Cargar y mostrar todas las notas (GET ALL)
  */
 async function cargarNotas() {
+    const API_URL = APIInput.value.trim();
+    if (!API_URL) {
+        listaNotas.innerHTML = '<li>Introduce la URL de la API.</li>';
+        return;
+    }
+
     try {
         const response = await fetch(API_URL);
         if (!response.ok) {
@@ -43,7 +49,6 @@ async function cargarNotas() {
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
             deleteBtn.innerText = 'Borrar 🗑️';
-            // Guardamos el ID en el botón para saber cuál borrar
             deleteBtn.dataset.id = nota.id;
 
             item.appendChild(info);
@@ -61,39 +66,32 @@ async function cargarNotas() {
  * 2. Crear una nueva nota (POST)
  */
 async function crearNota(e) {
-    // Prevenir que el formulario recargue la página
     e.preventDefault(); 
-    
-    // Obtener los valores del formulario
+    const API_URL = APIInput.value.trim();
+    if (!API_URL) {
+        alert('Introduce la URL de la API antes de crear una nota.');
+        return;
+    }
+
     const clase = document.getElementById('clase').value;
     const alumno = document.getElementById('alumno').value;
     const nota = parseInt(document.getElementById('nota').value);
 
-    const nuevaNota = {
-        Clase: clase,
-        Alumno: alumno,
-        Nota: nota
-    };
+    const nuevaNota = { Clase: clase, Alumno: alumno, Nota: nota };
 
     try {
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(nuevaNota)
         });
 
         if (!response.ok) {
-            // Intentar leer el error de la API
             const errorData = await response.json();
             throw new Error(errorData.details || `Error HTTP: ${response.status}`);
         }
 
-        // Limpiar el formulario
         form.reset();
-        
-        // Recargar la lista de notas para mostrar la nueva
         cargarNotas();
 
     } catch (error) {
@@ -106,43 +104,31 @@ async function crearNota(e) {
  * 3. Borrar una nota (DELETE)
  */
 async function borrarNota(e) {
-    // Solo reaccionar si se hizo clic en un botón de borrar
-    if (e.target.classList.contains('delete-btn')) {
-        
-        const idParaBorrar = e.target.dataset.id;
-        
-        if (!confirm(`¿Seguro que quieres borrar la nota con ID: ${idParaBorrar}?`)) {
-            return;
+    if (!e.target.classList.contains('delete-btn')) return;
+
+    const API_URL = APIInput.value.trim();
+    if (!API_URL) {
+        alert('Introduce la URL de la API antes de borrar una nota.');
+        return;
+    }
+
+    const idParaBorrar = e.target.dataset.id;
+    if (!confirm(`¿Seguro que quieres borrar la nota con ID: ${idParaBorrar}?`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/${idParaBorrar}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Error HTTP: ${response.status}`);
         }
-
-        try {
-            const response = await fetch(`${API_URL}/${idParaBorrar}`, {
-                method: 'DELETE'
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `Error HTTP: ${response.status}`);
-            }
-
-            // Recargar la lista para que desaparezca la nota borrada
-            cargarNotas();
-
-        } catch (error) {
-            console.error('Error al borrar nota:', error);
-            alert(`Error al borrar: ${error.message}`);
-        }
+        cargarNotas();
+    } catch (error) {
+        console.error('Error al borrar nota:', error);
+        alert(`Error al borrar: ${error.message}`);
     }
 }
 
-
 // --- INICIALIZACIÓN ---
-
-// 1. Cargar las notas cuando la página se abre
 document.addEventListener('DOMContentLoaded', cargarNotas);
-
-// 2. Escuchar el 'submit' del formulario
 form.addEventListener('submit', crearNota);
-
-// 3. Escuchar clics en la lista (para los botones de borrar)
 listaNotas.addEventListener('click', borrarNota);

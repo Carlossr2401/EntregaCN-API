@@ -3,6 +3,7 @@ Description: >
   Entrega 1.2 Versión Desacoplada Flask + ECS + Fargate
 
 Parameters:
+  # Lo seleccciono al crear por CloudFormation
   MyKeyName:
     Description: Nombre del Key Pair para SSH (opcional, solo para EC2 si necesitas bastion)
     Type: AWS::EC2::KeyPair::KeyName
@@ -245,24 +246,25 @@ Resources:
   ###########################
   # 9️⃣ ECS Task Definition   #
   ###########################
-  ECSTaskDefinition:
+  MyECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub "${AWS::StackName}-task"
+      Family: my-app-task
       Cpu: 256
       Memory: 512
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
-      ExecutionRoleArn: !GetAtt ECSServiceTaskRole.Arn
+      ExecutionRoleArn: arn:aws:iam::<ACCOUNT_ID>:role/LabRole   # <-- Aquí usamos LabRole
       ContainerDefinitions:
-        - Name: app
-          Image: !Sub "${AppECR.RepositoryUri}:latest"
+        - Name: flask-api
+          Image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/app-repo:latest
           PortMappings:
             - ContainerPort: 5000
           Environment:
             - Name: DB_SECRET_ARN
-              Value: !Ref DBSecret
+              Value: arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:<NOMBRE_SECRETO>
+
 
   ECSService:
     Type: AWS::ECS::Service
