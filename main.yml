@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Despliegue de una aplicación monolítica Flask en EC2 con RDS,
+  Despliegue de una aplicación monolítica Flask en EC2 con RDS
   y API Gateway como proxy para ocultar los endpoints.
 
 Parameters:
@@ -17,6 +17,7 @@ Parameters:
   DBPassword:
     Type: String
     NoEcho: true
+    Default: MiPass1234
     Description: Contraseña de la base de datos
 
 Resources:
@@ -49,7 +50,7 @@ Resources:
   MyDBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceIdentifier: flask-db-instance
+      DBInstanceIdentifier: flask-db-instance-2
       AllocatedStorage: 20
       DBInstanceClass: db.t3.micro
       Engine: MySQL
@@ -110,6 +111,7 @@ Resources:
       PathPart: "{proxy+}"
       RestApiId: !Ref ApiGatewayRestApi
 
+  # --- Proxy ANY para GET/POST/PUT/DELETE ---
   ApiGatewayProxyMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -124,13 +126,44 @@ Resources:
         Uri: !Sub "http://${EC2Instance.PublicDnsName}/"
         PassthroughBehavior: WHEN_NO_MATCH
 
+  # --- Método OPTIONS para CORS ---
+  ApiGatewayProxyOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayProxyResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: '{}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # --- Deployment ---
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: ApiGatewayProxyMethod
+    DependsOn:
+      - ApiGatewayProxyMethod
+      - ApiGatewayProxyOptions
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       StageName: prod
 
+  # --- Usage Plan y API Key ---
   ApiGatewayUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
     DependsOn: ApiGatewayDeployment

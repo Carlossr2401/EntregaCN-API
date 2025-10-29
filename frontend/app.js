@@ -1,7 +1,7 @@
 // --- CONFIGURACIÓN DINÁMICA ---
-// La URL de la API se toma desde el input del HTML
+// La URL de la API y la API Key se toman desde inputs del HTML
 const APIInput = document.getElementById('api-url');
-const PASSWORDInput = document.getElementById('api-password'); // Si usas contraseña
+const PASSWORDInput = document.getElementById('api-password');
 
 // Referencias a los elementos del DOM
 const form = document.getElementById('form-crear-nota');
@@ -12,40 +12,40 @@ const listaNotas = document.getElementById('lista-notas');
  */
 async function cargarNotas() {
     const API_URL = APIInput.value.trim();
-    if (!API_URL) {
-        listaNotas.innerHTML = '<li>Introduce la URL de la API.</li>';
+    const API_KEY = PASSWORDInput.value.trim();
+    if (!API_URL || !API_KEY) {
+        listaNotas.innerHTML = '<li>Introduce la URL de la API y la contraseña.</li>';
         return;
     }
 
     try {
-        const response = await fetch(API_URL);
+        const response = await fetch(API_URL, {
+            method: 'GET',
+            headers: { 'x-api-key': API_KEY }
+        });
+
         if (!response.ok) {
             throw new Error(`Error HTTP: ${response.status}`);
         }
+
         const notas = await response.json();
-        
-        // Limpiar la lista antes de añadir
         listaNotas.innerHTML = '';
 
-        // Si no hay notas, mostrar un mensaje
         if (notas.length === 0) {
             listaNotas.innerHTML = '<li>No hay notas registradas.</li>';
             return;
         }
 
-        // Crear un <li> por cada nota
         notas.forEach(nota => {
             const item = document.createElement('li');
-            
-            // Contenido (Clase, Alumno, Nota)
+
             const info = document.createElement('div');
             info.className = 'nota-info';
             info.innerHTML = `
                 <span>${nota.Clase}</span> (${nota.Alumno}) - 
                 <strong>Nota: ${nota.Nota}</strong>
             `;
-            
-            // Botón de borrar
+
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
             deleteBtn.innerText = 'Borrar 🗑️';
@@ -66,10 +66,12 @@ async function cargarNotas() {
  * 2. Crear una nueva nota (POST)
  */
 async function crearNota(e) {
-    e.preventDefault(); 
+    e.preventDefault();
     const API_URL = APIInput.value.trim();
-    if (!API_URL) {
-        alert('Introduce la URL de la API antes de crear una nota.');
+    const API_KEY = PASSWORDInput.value.trim();
+
+    if (!API_URL || !API_KEY) {
+        alert('Introduce la URL de la API y la contraseña antes de crear una nota.');
         return;
     }
 
@@ -82,7 +84,10 @@ async function crearNota(e) {
     try {
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': API_KEY
+            },
             body: JSON.stringify(nuevaNota)
         });
 
@@ -107,8 +112,10 @@ async function borrarNota(e) {
     if (!e.target.classList.contains('delete-btn')) return;
 
     const API_URL = APIInput.value.trim();
-    if (!API_URL) {
-        alert('Introduce la URL de la API antes de borrar una nota.');
+    const API_KEY = PASSWORDInput.value.trim();
+
+    if (!API_URL || !API_KEY) {
+        alert('Introduce la URL de la API y la contraseña antes de borrar una nota.');
         return;
     }
 
@@ -116,11 +123,16 @@ async function borrarNota(e) {
     if (!confirm(`¿Seguro que quieres borrar la nota con ID: ${idParaBorrar}?`)) return;
 
     try {
-        const response = await fetch(`${API_URL}/${idParaBorrar}`, { method: 'DELETE' });
+        const response = await fetch(`${API_URL}/${idParaBorrar}`, {
+            method: 'DELETE',
+            headers: { 'x-api-key': API_KEY }
+        });
+
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || `Error HTTP: ${response.status}`);
         }
+
         cargarNotas();
     } catch (error) {
         console.error('Error al borrar nota:', error);
