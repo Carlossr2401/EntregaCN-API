@@ -3,6 +3,7 @@ import json
 import boto3
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from pydantic import ValidationError
 from datetime import datetime
 import uuid
@@ -10,6 +11,7 @@ from models.grades import GradeModel, UpdateGradeModel, GradeCreateModel
 import psycopg2
 
 app = Flask(__name__)
+CORS(app)
 
 # --- 1️⃣ Obtener credenciales de DB desde AWS Secrets Manager ---
 SECRET_ARN = os.environ.get("DB_SECRET_ARN")
