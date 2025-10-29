@@ -1,12 +1,7 @@
+# Dockerfile
 FROM python:3.11-slim
-
 WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
-
+RUN pip install --no-cache-dir flask flask_sqlalchemy flask_cors pydantic psycopg2-binary boto3
 EXPOSE 5000
-
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+CMD ["python", "app.py"]

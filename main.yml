@@ -1,208 +1,137 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: >
-  Despliegue de una aplicación monolítica Flask en EC2 con RDS
-  y API Gateway como proxy para ocultar los endpoints.
+Description: 'Entrega 1 CN con Fargate (Contenedores) usando LabRole'
 
 Parameters:
-  MyKeyName:
-    Description: Nombre de tu Key Pair (.pem) existente para acceder por SSH
-    Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: Debe ser un Key Pair existente en EC2
+  VpcId:
+    Description: 'La VPC donde se ejecutarán los contenedores. Elige tu VPC por defecto.'
+    Type: AWS::EC2::VPC::Id
 
-  DBUsername:
-    Type: String
-    Default: admin
-    Description: Usuario de la base de datos
+  SubnetIds:
+    Description: 'Elige al menos DOS subredes PÚBLICAS de tu VPC (para el Balanceador).'
+    Type: List<AWS::EC2::Subnet::Id>
 
-  DBPassword:
+  ImageUrl:
+    Description: 'La URL completa de tu imagen en ECR (ej. 123456.dkr.ecr.region.amazonaws.com/mi-api:latest)'
     Type: String
-    NoEcho: true
-    Default: MiPass1234
-    Description: Contraseña de la base de datos
+    
+  ContainerPort:
+    Description: 'El puerto en el que tu API escucha DENTRO del contenedor (ej. 3000, 5000, 8080)'
+    Type: Number
+    Default: 80
+    
+  ExecutionRoleArn:
+    Description: 'El ARN completo de tu rol de IAM existente (LabRole)'
+    Type: String
+    # Ejemplo: arn:aws:iam::111122223333:role/LabRole
 
 Resources:
-  # --- Security Groups ---
-  EC2SecurityGroup:
+  # 1. El Cluster de ECS (Agrupador lógico)
+  MyECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: 'cluster-api-clase'
+
+  # 2. Grupo de Seguridad para el Balanceador (Abierto al puerto 80)
+  LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Permitir HTTP (80) y SSH (22)
+      GroupDescription: 'Permite tráfico HTTP (puerto 80) desde Internet'
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
+          CidrIp: 0.0.0.0/0 # Abierto a todo el mundo
 
-  RDSSecurityGroup:
+  # 3. Grupo de Seguridad para el Contenedor (Solo abierto al Balanceador)
+  ContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Permitir acceso a RDS desde EC2
+      GroupDescription: 'Permite tráfico solo desde el Balanceador de Carga'
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 3306
-          ToPort: 3306
-          SourceSecurityGroupId: !GetAtt EC2SecurityGroup.GroupId
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          # Solo permite tráfico que venga desde el Security Group del Balanceador
+          SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId 
 
-  # --- Base de datos RDS ---
-  MyDBInstance:
-    Type: AWS::RDS::DBInstance
+  # 4. El Balanceador de Carga (ALB)
+  MyLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      DBInstanceIdentifier: flask-db-instance-2
-      AllocatedStorage: 20
-      DBInstanceClass: db.t3.micro
-      Engine: MySQL
-      EngineVersion: "8.0"
-      MasterUsername: !Ref DBUsername
-      MasterUserPassword: !Ref DBPassword
-      VPCSecurityGroups:
-        - !GetAtt RDSSecurityGroup.GroupId
-      PubliclyAccessible: true
-      BackupRetentionPeriod: 1
-      DeletionProtection: false
+      Name: 'api-clase-lb'
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds # Debe estar en subredes públicas
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
 
-  # --- EC2 Instance ---
-  EC2Instance:
-    Type: AWS::EC2::Instance
+  # 5. El "Target Group" (A dónde apunta el ALB)
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      InstanceType: t3.micro
-      KeyName: !Ref MyKeyName
-      SecurityGroupIds:
-        - !GetAtt EC2SecurityGroup.GroupId
-      ImageId: ami-0c7217cdde317cfec # Amazon Linux 2023 (us-east-1)
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum update -y
-          yum install -y docker git
-          systemctl start docker
-          systemctl enable docker
+      Name: 'tg-api-clase'
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort # El puerto de tu contenedor
+      HealthCheckPath: '/' # AWS comprobará esta ruta (ej. '/') para ver si tu API está viva
+      TargetType: ip # Requerido por Fargate
 
-          cd /home/ec2-user
-          git clone https://github.com/Carlossr2401/entregacn-api.git app
-          cd app/app
-
-          # Dockerize la app
-          cat > Dockerfile <<EOF
-          FROM python:3.11-slim
-          WORKDIR /app
-          COPY . /app
-          RUN pip install --no-cache-dir -r requirements.txt
-          EXPOSE 5000
-          CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
-          EOF
-
-          docker build -t flask-app .
-          docker run -d -p 80:5000 flask-app
-
-  # --- API Gateway ---
-  ApiGatewayRestApi:
-    Type: AWS::ApiGateway::RestApi
+  # 6. El "Listener" (Escucha en puerto 80 y reenvía al Target Group)
+  MyListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      Name: FlaskMonolithicAPI
-      Description: API Gateway proxy hacia EC2
+      LoadBalancerArn: !Ref MyLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MyTargetGroup
 
-  ApiGatewayProxyResource:
-    Type: AWS::ApiGateway::Resource
+  # 7. La "Task Definition" (La receta de tu contenedor)
+  MyTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
     Properties:
-      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
-      PathPart: "{proxy+}"
-      RestApiId: !Ref ApiGatewayRestApi
+      Family: 'task-api-clase'
+      RequiresCompatibilities: 
+        - FARGATE
+      NetworkMode: awsvpc # Requerido por Fargate
+      Cpu: 256 # 0.25 vCPU
+      Memory: 512 # 0.5 GB
+      
+      # --- ¡AQUÍ ESTÁ EL CAMBIO! ---
+      # Usa el ARN del parámetro que le pasamos
+      ExecutionRoleArn: !Ref ExecutionRoleArn 
+      
+      ContainerDefinitions:
+        - Name: 'mi-api-container'
+          Image: !Ref ImageUrl
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
 
-  # --- Proxy ANY para GET/POST/PUT/DELETE ---
-  ApiGatewayProxyMethod:
-    Type: AWS::ApiGateway::Method
+  # 8. El Servicio (El director que lanza la tarea)
+  MyService:
+    Type: AWS::ECS::Service
     Properties:
-      RestApiId: !Ref ApiGatewayRestApi
-      ResourceId: !Ref ApiGatewayProxyResource
-      HttpMethod: ANY
-      AuthorizationType: NONE
-      ApiKeyRequired: true
-      Integration:
-        Type: HTTP_PROXY
-        IntegrationHttpMethod: ANY
-        Uri: !Sub "http://${EC2Instance.PublicDnsName}/"
-        PassthroughBehavior: WHEN_NO_MATCH
-
-  # --- Método OPTIONS para CORS ---
-  ApiGatewayProxyOptions:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      RestApiId: !Ref ApiGatewayRestApi
-      ResourceId: !Ref ApiGatewayProxyResource
-      HttpMethod: OPTIONS
-      AuthorizationType: NONE
-      Integration:
-        Type: MOCK
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
-              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
-              method.response.header.Access-Control-Allow-Origin: "'*'"
-            ResponseTemplates:
-              application/json: '{}'
-      MethodResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Headers: true
-            method.response.header.Access-Control-Allow-Methods: true
-            method.response.header.Access-Control-Allow-Origin: true
-
-  # --- Deployment ---
-  ApiGatewayDeployment:
-    Type: AWS::ApiGateway::Deployment
-    DependsOn:
-      - ApiGatewayProxyMethod
-      - ApiGatewayProxyOptions
-    Properties:
-      RestApiId: !Ref ApiGatewayRestApi
-      StageName: prod
-
-  # --- Usage Plan y API Key ---
-  ApiGatewayUsagePlan:
-    Type: AWS::ApiGateway::UsagePlan
-    DependsOn: ApiGatewayDeployment
-    Properties:
-      UsagePlanName: BasicPlan
-      ApiStages:
-        - ApiId: !Ref ApiGatewayRestApi
-          Stage: prod
-
-  ApiGatewayApiKey:
-    Type: AWS::ApiGateway::ApiKey
-    DependsOn: ApiGatewayUsagePlan
-    Properties:
-      Name: FlaskMonolithicKey
-      Enabled: true
-      Value: "MiContrasenaAPIGateway123!"
-      StageKeys:
-        - RestApiId: !Ref ApiGatewayRestApi
-          StageName: prod
-
-  ApiGatewayUsagePlanKey:
-    Type: AWS::ApiGateway::UsagePlanKey
-    DependsOn:
-      - ApiGatewayApiKey
-      - ApiGatewayUsagePlan
-    Properties:
-      KeyId: !Ref ApiGatewayApiKey
-      KeyType: API_KEY
-      UsagePlanId: !Ref ApiGatewayUsagePlan
+      ServiceName: 'servicio-api-clase'
+      Cluster: !Ref MyECSCluster
+      TaskDefinition: !Ref MyTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: 1 # Cuántas copias de tu contenedor quieres
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED # Necesario para que Fargate pueda descargar tu imagen de ECR
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+      LoadBalancers: # Conecta el servicio al Balanceador
+        - ContainerName: 'mi-api-container'
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref MyTargetGroup
+    DependsOn: MyListener # Se asegura de crear el Listener antes que el servicio
 
 Outputs:
-  ApiGatewayURL:
-    Description: Endpoint público de API Gateway (proxy hacia EC2)
-    Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
-
-  EC2PublicDNS:
-    Description: DNS público de la instancia EC2
-    Value: !GetAtt EC2Instance.PublicDnsName
-
-  DBEndpoint:
-    Description: Endpoint de la base de datos RDS
-    Value: !GetAtt MyDBInstance.Endpoint.Address
+  ApiEndpoint:
+    Description: 'La URL pública de la API'
+    Value: !Join [ '', [ 'http://', !GetAtt MyLoadBalancer.DNSName ] ]
