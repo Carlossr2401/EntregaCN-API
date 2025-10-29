@@ -1,113 +1,175 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Despliegue de aplicación en EC2 con Docker Compose y exposición vía API Gateway HTTP.
+  Despliegue de una aplicación monolítica Flask en EC2 con RDS,
+  y API Gateway como proxy para ocultar los endpoints.
 
 Parameters:
   MyKeyName:
     Description: Nombre de tu Key Pair (.pem) existente para acceder por SSH
     Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: Debe ser el nombre de un Key Pair existente en EC2.
+    ConstraintDescription: Debe ser un Key Pair existente en EC2
 
-  MyHomeIP:
-    Description: Tu IP de casa (para acceso SSH). Añade /32 al final.
+  DBUsername:
     Type: String
-    Default: '88.24.94.142/32'
+    Default: admin
+    Description: Usuario de la base de datos
 
-  LatestAmiId:
-    Description: ID de la AMI de Amazon Linux 2023
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Contraseña de la base de datos
 
 Resources:
-  InstanceSecurityGroup:
+  # --- Security Groups ---
+  EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Permite SSH (desde casa) y HTTP (desde todos)
+      GroupDescription: Permitir HTTP (80) y SSH (22)
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: !Ref MyHomeIP
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
 
-  MyEC2Instance:
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permitir acceso a RDS desde EC2
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !GetAtt EC2SecurityGroup.GroupId
+
+  # --- Base de datos RDS ---
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: flask-db-instance
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: MySQL
+      EngineVersion: "8.0"
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !GetAtt RDSSecurityGroup.GroupId
+      PubliclyAccessible: true
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+
+  # --- EC2 Instance ---
+  EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.micro
       KeyName: !Ref MyKeyName
-      ImageId: !Ref LatestAmiId
       SecurityGroupIds:
-        - !Ref InstanceSecurityGroup
-      Tags:
-        - Key: Name
-          Value: Docker-Compose-Server
+        - !GetAtt EC2SecurityGroup.GroupId
+      ImageId: ami-0c7217cdde317cfec # Amazon Linux 2023 (us-east-1)
       UserData:
-        Fn::Base64: |
-          #!/bin/bash -xe
-          dnf update -y
-          dnf install git wget docker -y
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y docker git
           systemctl start docker
           systemctl enable docker
-          usermod -aG docker ec2-user
-          mkdir -p /usr/local/lib/docker/cli-plugins
-          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
-          wget https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 -O /usr/local/lib/docker/cli-plugins/docker-buildx
-          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-          chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
-          su - ec2-user -c "
-            git clone https://github.com/Carlossr2401/entregacn-api.git /home/ec2-user/app
-            cd /home/ec2-user/app
-            sed -i '/^version:/d' docker-compose.yml
-            sed -i 's/\"8080:80\"/\"80:80\"/' docker-compose.yml
-            docker compose up --build -d
-          "
 
-  # === API Gateway HTTP ===
-  MyHttpApi:
-    Type: AWS::ApiGatewayV2::Api
-    Properties:
-      Name: EC2ProxyAPI
-      ProtocolType: HTTP
-      CorsConfiguration:
-        AllowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-        AllowOrigins: ["*"]
-        AllowHeaders: ["*"]
+          cd /home/ec2-user
+          git clone https://github.com/Carlossr2401/entregacn-api.git app
+          cd app/app
 
-  MyApiIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref MyHttpApi
-      IntegrationType: HTTP_PROXY
-      IntegrationUri: !Sub "http://${MyEC2Instance.PublicDnsName}"
-      IntegrationMethod: ANY          # 👈 clave para evitar el error
-      PayloadFormatVersion: "1.0"
+          # Dockerize la app
+          cat > Dockerfile <<EOF
+          FROM python:3.11-slim
+          WORKDIR /app
+          COPY . /app
+          RUN pip install --no-cache-dir -r requirements.txt
+          EXPOSE 5000
+          CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
+          EOF
 
-  MyApiRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref MyHttpApi
-      RouteKey: "ANY /{proxy+}"
-      Target: !Sub "integrations/${MyApiIntegration}"
+          docker build -t flask-app .
+          docker run -d -p 80:5000 flask-app
 
-  MyApiStage:
-    Type: AWS::ApiGatewayV2::Stage
+  # --- API Gateway ---
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
     Properties:
-      ApiId: !Ref MyHttpApi
+      Name: FlaskMonolithicAPI
+      Description: API Gateway proxy hacia EC2
+
+  ApiGatewayProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "{proxy+}"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: !Sub "http://${EC2Instance.PublicDnsName}/"
+        PassthroughBehavior: WHEN_NO_MATCH
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiGatewayProxyMethod
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
       StageName: prod
-      AutoDeploy: true
+
+  ApiGatewayUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: ApiGatewayDeployment
+    Properties:
+      UsagePlanName: BasicPlan
+      ApiStages:
+        - ApiId: !Ref ApiGatewayRestApi
+          Stage: prod
+
+  ApiGatewayApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: ApiGatewayUsagePlan
+    Properties:
+      Name: FlaskMonolithicKey
+      Enabled: true
+      Value: "MiContrasenaAPIGateway123!"
+      StageKeys:
+        - RestApiId: !Ref ApiGatewayRestApi
+          StageName: prod
+
+  ApiGatewayUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    DependsOn:
+      - ApiGatewayApiKey
+      - ApiGatewayUsagePlan
+    Properties:
+      KeyId: !Ref ApiGatewayApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiGatewayUsagePlan
 
 Outputs:
-  PublicIP:
-    Description: IP Pública de la instancia
-    Value: !GetAtt MyEC2Instance.PublicIp
+  ApiGatewayURL:
+    Description: Endpoint público de API Gateway (proxy hacia EC2)
+    Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
 
-  PublicURL:
-    Description: URL directa (sin API Gateway)
-    Value: !Sub "http://${MyEC2Instance.PublicDnsName}"
+  EC2PublicDNS:
+    Description: DNS público de la instancia EC2
+    Value: !GetAtt EC2Instance.PublicDnsName
 
-  ApiGatewayInvokeURL:
-    Description: Endpoint público del API Gateway
-    Value: !Sub "https://${MyHttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  DBEndpoint:
+    Description: Endpoint de la base de datos RDS
+    Value: !GetAtt MyDBInstance.Endpoint.Address
